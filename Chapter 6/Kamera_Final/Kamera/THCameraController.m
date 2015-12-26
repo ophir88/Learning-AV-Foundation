@@ -30,6 +30,8 @@
 
 NSString *const THThumbnailCreatedNotification = @"THThumbnailCreated";
 
+int static captureNumber = 0;
+
 @interface THCameraController () <AVCaptureFileOutputRecordingDelegate>
 
 @property (strong, nonatomic) AVCaptureSession *captureSession;
@@ -377,30 +379,84 @@ static const NSString *THCameraAdjustingExposureContext;
 
 - (void)captureStillImage {
 
-    AVCaptureConnection *connection =                                   
+//    AVCaptureConnection *connection =                                   
+//        [self.imageOutput connectionWithMediaType:AVMediaTypeVideo];
+//
+//    if (connection.isVideoOrientationSupported) {                       
+//        connection.videoOrientation = [self currentVideoOrientation];
+//    }
+//
+//    id handler = ^(CMSampleBufferRef sampleBuffer, NSError *error) {
+//        if (sampleBuffer != NULL) {
+//
+//            NSData *imageData =
+//                [AVCaptureStillImageOutput
+//                    jpegStillImageNSDataRepresentation:sampleBuffer];
+//
+//            UIImage *image = [[UIImage alloc] initWithData:imageData];
+//            [self writeImageToAssetsLibrary:image];                         // 1
+//
+//        } else {
+//            NSLog(@"NULL sampleBuffer: %@", [error localizedDescription]);
+//        }
+//    };
+//    // Capture still image
+//    [self.imageOutput captureStillImageAsynchronouslyFromConnection:connection
+//                                                  completionHandler:handler];
+  [self startFocusCapture];
+}
+
+
+- (void)startFocusCapture {
+  if (captureNumber > 10) {
+    captureNumber = 0;
+    return;
+  }
+  captureNumber++;
+  
+  
+  AVCaptureDevice *device = [self activeCamera];
+  
+  if (device.isFocusPointOfInterestSupported &&                           // 3
+      [device isFocusModeSupported:AVCaptureFocusModeAutoFocus]) {
+    
+    NSError *error;
+    if ([device lockForConfiguration:&error]) {
+      float lensPosition =  (captureNumber == 10) ? 0 : 1 / captureNumber;
+      
+      [device setFocusModeLockedWithLensPosition:lensPosition completionHandler:^(CMTime syncTime) {
+        
+        AVCaptureConnection *connection =
         [self.imageOutput connectionWithMediaType:AVMediaTypeVideo];
-
-    if (connection.isVideoOrientationSupported) {                       
-        connection.videoOrientation = [self currentVideoOrientation];
-    }
-
-    id handler = ^(CMSampleBufferRef sampleBuffer, NSError *error) {
-        if (sampleBuffer != NULL) {
-
+        if (connection.isVideoOrientationSupported) {
+          connection.videoOrientation = [self currentVideoOrientation];
+        }
+        
+        id handler = ^(CMSampleBufferRef sampleBuffer, NSError *error) {
+          if (sampleBuffer != NULL) {
+            
             NSData *imageData =
-                [AVCaptureStillImageOutput
-                    jpegStillImageNSDataRepresentation:sampleBuffer];
-
+            [AVCaptureStillImageOutput
+             jpegStillImageNSDataRepresentation:sampleBuffer];
+            
             UIImage *image = [[UIImage alloc] initWithData:imageData];
             [self writeImageToAssetsLibrary:image];                         // 1
-
-        } else {
+            
+          } else {
             NSLog(@"NULL sampleBuffer: %@", [error localizedDescription]);
-        }
-    };
-    // Capture still image
-    [self.imageOutput captureStillImageAsynchronouslyFromConnection:connection
-                                                  completionHandler:handler];
+          }
+        };
+        // Capture still image
+        [self.imageOutput captureStillImageAsynchronouslyFromConnection:connection
+                                                      completionHandler:handler];
+        AVCaptureDevice *device = [self activeCamera];
+        [device unlockForConfiguration];
+        [self startFocusCapture];
+      }];
+    } else {
+      [self.delegate deviceConfigurationFailedWithError:error];
+    }
+  }
 }
 
 - (void)writeImageToAssetsLibrary:(UIImage *)image {
